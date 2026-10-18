@@ -96,6 +96,9 @@ function loadImage(file, maxSide = 1600) {
 const state = {
   equipements: [],
   docs: [],
+  codes: [],
+  pieces: [],
+  brand: {},
   currentEquip: storage.get("cvc.equip", ""),
   mode: "diagnostic",
   sessions: storage.get("cvc.sessions", []),
@@ -135,12 +138,22 @@ function setCurrentEquip(id) {
   state.currentEquip = getEquip(id) ? id : "";
   storage.set("cvc.equip", state.currentEquip);
   const e = getEquip(state.currentEquip);
-  $("#equip-chip").textContent = e ? equipLabel(e) : "Aucun appareil";
+  $("#equip-chip").textContent = e ? equipLabel(e) : "Aucun";
   $("#chat-equip").value = state.currentEquip;
 }
 
 async function refreshData() {
-  [state.equipements, state.docs] = await Promise.all([api("/api/equipements"), api("/api/docs")]);
+  let marques;
+  [state.equipements, state.docs, state.codes, state.pieces, marques] = await Promise.all([
+    api("/api/equipements"),
+    api("/api/docs"),
+    api("/api/codes"),
+    api("/api/pieces"),
+    api("/api/marques"),
+  ]);
+  $("#marques").innerHTML = marques.map((m) => `<option value="${esc(m)}">`).join("");
+  renderCodes();
+  renderPieces();
   const sel = $("#chat-equip");
   sel.innerHTML =
     `<option value="">— Appareil non précisé —</option>` +
@@ -160,6 +173,16 @@ $("#tabs").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-view]");
   if (b) showView(b.dataset.view);
 });
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-goto]");
+  if (!b) return;
+  if (b.dataset.goto === "assistant" && b.dataset.mode) {
+    setMode(b.dataset.mode);
+    newSession();
+  }
+  showView(b.dataset.goto);
+});
+$("#brand-home").addEventListener("click", () => showView("home"));
 
 // ---------- Assistant ----------
 const STARTERS = {
@@ -987,10 +1010,444 @@ $("#calc-ask").addEventListener("click", () => {
   );
 });
 
+// ---------- Identité visuelle ----------
+function applyBrand(b) {
+  state.brand = b;
+  const root = document.documentElement.style;
+  root.setProperty("--brand", b.couleurPrimaire);
+  root.setProperty("--brand-accent", b.couleurAccent);
+  $('meta[name="theme-color"]').content = b.couleurPrimaire;
+  $("#brand-name").textContent = b.nom;
+  $("#brand-slogan").textContent = b.slogan;
+  $("#brand-logo").src = `/brand/logo?t=${Date.now()}`;
+  document.title = `${b.nom} – Dépannage CVC`;
+}
+
+$("#settings-btn").addEventListener("click", () => {
+  const b = state.brand;
+  const dlg = $("#dlg");
+  dlg.innerHTML = `
+    <h2 style="margin-top:0">Paramètres de l'entreprise</h2>
+    <div class="row" style="gap:12px;margin-bottom:12px">
+      <span class="logo-pill" style="border:1px solid var(--border)"><img id="set-logo" src="/brand/logo?t=${Date.now()}" alt="Logo"></span>
+      <label class="btn small">Changer le logo<input type="file" accept="image/png,image/jpeg,image/webp" id="set-logo-file" hidden></label>
+      ${b.logoPerso ? `<button class="btn small" data-act="logo-reset">Logo par défaut</button>` : ""}
+    </div>
+    <form class="grid" id="brand-form">
+      <label class="f">Nom<input name="nom" value="${esc(b.nom)}"></label>
+      <label class="f">Slogan<input name="slogan" value="${esc(b.slogan)}"></label>
+      <label class="f">Couleur principale<input type="color" name="couleurPrimaire" value="${esc(b.couleurPrimaire)}"></label>
+      <label class="f">Couleur d'accent<input type="color" name="couleurAccent" value="${esc(b.couleurAccent)}"></label>
+      <label class="f">Téléphone<input name="telephone" value="${esc(b.telephone)}"></label>
+      <label class="f">E-mail<input name="email" value="${esc(b.email)}"></label>
+      <label class="f full">Adresse<input name="adresse" value="${esc(b.adresse)}"></label>
+      <label class="f full">Site web<input name="site" value="${esc(b.site)}"></label>
+    </form>
+    <p class="muted">Logo : PNG ou JPEG, de préférence horizontal et sur fond transparent ou blanc. Il apparaît dans l'en-tête et sur les rapports d'intervention.</p>
+    <div class="row" style="margin-top:12px;justify-content:flex-end">
+      <button class="btn" data-act="close">Annuler</button><button class="btn primary" data-act="save">Enregistrer</button>
+    </div>`;
+  const form = $("#brand-form");
+  form.addEventListener("input", () => {
+    const d = formData(form);
+    applyBrand({ ...state.brand, ...d });
+    state.brand = b; // aperçu seulement tant que non enregistré
+  });
+  $("#set-logo-file").addEventListener("change", async (e) => {
+    const fd = new FormData();
+    fd.append("logo", e.target.files[0]);
+    const res = await fetch("/api/brand/logo", { method: "POST", body: fd });
+    const data = await res.json();
+    if (!res.ok) return toast(data.error, 5000);
+    b.logoPerso = true;
+    $("#set-logo").src = `/brand/logo?t=${Date.now()}`;
+    $("#brand-logo").src = `/brand/logo?t=${Date.now()}`;
+    toast("Logo mis à jour");
+  });
+  dlg.onclick = async (ev) => {
+    const act = ev.target.dataset.act;
+    if (act === "close") {
+      applyBrand(b);
+      dlg.close();
+    }
+    if (act === "logo-reset") {
+      await api("/api/brand/logo", { method: "DELETE" });
+      b.logoPerso = false;
+      applyBrand(b);
+      dlg.close();
+    }
+    if (act === "save") {
+      try {
+        const saved = await api("/api/brand", { method: "PUT", json: formData(form) });
+        applyBrand({ ...saved, logoPerso: b.logoPerso });
+        dlg.close();
+        toast("Paramètres enregistrés");
+      } catch (err) {
+        toast(err.message, 5000);
+      }
+    }
+  };
+  dlg.showModal();
+});
+
+// ---------- Codes erreur ----------
+const CAT_LABELS = { verrouillage: "Verrouillage", blocage: "Blocage", avertissement: "Avertissement", information: "Information", inconnu: "Non classé" };
+
+function ficheItem(f) {
+  return `<div class="item" data-fiche="${esc(f.id)}" style="cursor:pointer">
+    <span class="code-pill">${esc(f.code)}</span>
+    <div class="grow"><div class="title">${esc(f.titre || f.signification || "")}</div>
+      <div class="muted">${esc([f.marque, f.modele].filter(Boolean).join(" · "))}</div></div>
+    ${f.favori ? "★" : ""}
+  </div>`;
+}
+
+function renderFiche(f) {
+  const has = (arr) => Array.isArray(arr) && arr.length > 0;
+  return `<div class="card fiche" data-id="${esc(f.id)}">
+    <div class="fiche-head">
+      <div class="code-badge">${esc(f.code)}</div>
+      <div class="grow">
+        <h2 style="margin:0">${esc(f.titre || "Défaut")}</h2>
+        <div class="muted">${esc([f.marque, f.modele].filter(Boolean).join(" · "))}</div>
+        <div class="row" style="margin-top:4px"><span class="cat ${esc(f.categorie)}">${esc(CAT_LABELS[f.categorie] || f.categorie || "")}</span>
+          <span class="badge ${f.confiance === "haute" ? "ok" : "warn"}">fiabilité ${esc(f.confiance || "?")}</span></div>
+      </div>
+    </div>
+    ${f.securite ? `<div class="banner" style="margin:12px 0 0">⚠️ ${esc(f.securite)}</div>` : ""}
+    <h3>Signification</h3><p>${esc(f.signification)}</p>
+    ${f.organe ? `<p><strong>Organe surveillé :</strong> ${esc(f.organe)}</p>` : ""}
+    ${f.declenchement ? `<p><strong>Déclenchement :</strong> ${esc(f.declenchement)}</p>` : ""}
+    ${has(f.causes) ? `<h3>Causes probables et contrôles</h3><ol class="causes">${f.causes
+      .map((c) => `<li><span class="prob ${esc(c.probabilite)}">${esc(c.probabilite || "")}</span> <strong>${esc(c.cause)}</strong><br><span class="muted">${esc(c.verification)}</span></li>`)
+      .join("")}</ol>` : ""}
+    ${has(f.procedure) ? `<h3>Procédure de dépannage</h3><ol>${f.procedure.map((x) => `<li>${esc(x)}</li>`).join("")}</ol>` : ""}
+    ${has(f.pieces) ? `<h3>Pièces à contrôler / remplacer</h3><div class="list">${f.pieces
+      .map(
+        (p, i) => `<div class="item"><div class="grow"><div class="title">${esc(p.designation)}</div><div class="muted">${esc(p.reference || "réf. à confirmer")}</div></div>
+        <button class="btn small" data-add-piece="${i}">+ Liste</button><button class="btn small" data-find-piece="${i}">Réf.</button></div>`,
+      )
+      .join("")}</div>` : ""}
+    ${f.reinitialisation ? `<h3>Réinitialisation</h3><p>${esc(f.reinitialisation)}</p>` : ""}
+    ${
+      has(f.docsLocales) || has(f.sources)
+        ? `<div class="sources muted" style="margin-top:10px">Sources : ${[
+            ...(f.docsLocales || []).map((d) => `<a href="/api/docs/${encodeURIComponent(d.docId)}/file#page=${d.page}" target="_blank">${esc(d.titre)} p.${d.page}</a>`),
+            ...(f.sources || []).filter((u) => /^https?:\/\//.test(u)).map((u) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(new URL(u).hostname)}</a>`),
+          ].join(" · ")}</div>`
+        : ""
+    }
+    <div class="row" style="margin-top:12px">
+      <button class="btn primary" data-fact="diag">🩺 Diagnostic guidé</button>
+      <button class="btn" data-fact="fav">${f.favori ? "★ Retirer des favoris" : "☆ Favori"}</button>
+      <button class="btn" data-fact="refresh">Mettre à jour</button>
+      <button class="btn danger" data-fact="del">Supprimer</button>
+    </div>
+  </div>`;
+}
+
+function showFiches(fiches) {
+  $("#code-result").innerHTML = fiches.map(renderFiche).join("");
+}
+
+$("#code-result").addEventListener("click", async (e) => {
+  const card = e.target.closest(".fiche");
+  if (!card) return;
+  const f = state.codes.find((x) => x.id === card.dataset.id);
+  if (!f) return;
+  const t = e.target.closest("button");
+  if (!t) return;
+  if (t.dataset.addPiece !== undefined) {
+    const p = f.pieces[Number(t.dataset.addPiece)];
+    await api("/api/pieces", { json: { designation: p.designation, reference: p.reference || "", equipementId: state.currentEquip } });
+    toast("Ajoutée à la liste de pièces");
+    return refreshData();
+  }
+  if (t.dataset.findPiece !== undefined) {
+    const p = f.pieces[Number(t.dataset.findPiece)];
+    const form = $("#piece-form");
+    form.marque.value = f.marque;
+    form.modele.value = f.modele || "";
+    form.piece.value = [p.designation, p.reference].filter(Boolean).join(" ");
+    showView("pieces");
+    return form.requestSubmit();
+  }
+  const act = t.dataset.fact;
+  if (act === "diag")
+    startChatWith(
+      "diagnostic",
+      `${f.marque} ${f.modele || ""} en défaut ${f.code} (${f.titre}). Guide-moi pas à pas pour trouver la cause.`.replace(/\s+/g, " "),
+    );
+  if (act === "fav") {
+    await api(`/api/codes/${f.id}`, { method: "PATCH", json: { favori: !f.favori } });
+    await refreshData();
+    showFiches([state.codes.find((x) => x.id === f.id)]);
+  }
+  if (act === "refresh") lookupCode({ marque: f.marque, modele: f.modele, code: f.code }, true);
+  if (act === "del" && confirm("Supprimer cette fiche de la base ?")) {
+    await api(`/api/codes/${f.id}`, { method: "DELETE" });
+    card.remove();
+    refreshData();
+  }
+});
+
+async function lookupCode(q, forceOnline = false) {
+  const status = $("#code-status");
+  if (!forceOnline) {
+    const local = await api(`/api/codes?marque=${encodeURIComponent(q.marque)}&code=${encodeURIComponent(q.code)}`);
+    if (local.length) {
+      status.innerHTML = `${local.length} fiche(s) dans votre base. <button class="btn small" id="code-online">Chercher aussi en ligne</button>`;
+      $("#code-online").onclick = () => lookupCode(q, true);
+      return showFiches(local);
+    }
+  }
+  $("#code-result").innerHTML = `<div class="card"><div class="msg assistant" id="code-live" style="border:0;padding:0"></div></div>`;
+  let text = "";
+  status.innerHTML = `<span class="spinner"></span> Recherche de ${esc(q.code)} chez ${esc(q.marque)}…`;
+  try {
+    await streamPost("/api/codes/recherche", q, (ev) => {
+      if (ev.type === "status") status.innerHTML = `<span class="spinner"></span> ${esc(ev.text)}`;
+      if (ev.type === "text") {
+        text += ev.text;
+        $("#code-live").innerHTML = md(text.split("```json")[0]);
+      }
+      if (ev.type === "error") toast(ev.text, 6000);
+      if (ev.type === "fiche") {
+        state.codes.unshift(ev.fiche);
+        showFiches([ev.fiche]);
+      }
+    });
+    status.textContent = "Fiche enregistrée dans votre base (consultable hors ligne).";
+    refreshData();
+  } catch (err) {
+    status.textContent = `Échec : ${err.message}`;
+  }
+}
+
+$("#code-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const q = formData(e.target);
+  lookupCode({ marque: q.marque.trim(), modele: q.modele.trim(), code: q.code.trim() });
+});
+
+function renderCodes() {
+  const f = $("#code-filter").value.trim().toLowerCase();
+  const items = state.codes.filter((c) => !f || `${c.marque} ${c.modele} ${c.code} ${c.titre}`.toLowerCase().includes(f));
+  $("#code-list").innerHTML = items.map(ficheItem).join("") || `<p class="muted">Aucune fiche pour l'instant : chaque recherche enrichit votre base.</p>`;
+  const favs = state.codes.filter((c) => c.favori);
+  $("#home-favs-card").hidden = !favs.length;
+  $("#home-favs").innerHTML = favs.slice(0, 8).map(ficheItem).join("");
+  $("#home-recent").innerHTML =
+    state.codes.slice(0, 6).map(ficheItem).join("") || `<p class="muted">Recherchez un code erreur pour créer votre première fiche.</p>`;
+}
+$("#code-filter").addEventListener("input", renderCodes);
+
+function openFiche(id) {
+  const f = state.codes.find((x) => x.id === id);
+  if (!f) return;
+  showView("codes");
+  showFiches([f]);
+}
+document.addEventListener("click", (e) => {
+  const el = e.target.closest("[data-fiche]");
+  if (el && !e.target.closest("button")) openFiche(el.dataset.fiche);
+});
+
+// Pré-remplit la marque avec l'appareil en cours
+function prefillCodeForm() {
+  const eq = getEquip(state.currentEquip);
+  const form = $("#code-form");
+  if (eq && !form.marque.value) {
+    form.marque.value = eq.fabricant || "";
+    form.modele.value = [eq.gamme, eq.modele].filter(Boolean).join(" ");
+  }
+}
+document.querySelector('#tabs [data-view="codes"]').addEventListener("click", prefillCodeForm);
+
+// ---------- Recherche globale (accueil) ----------
+let homeTimer;
+$("#home-search").addEventListener("input", (e) => {
+  clearTimeout(homeTimer);
+  const q = e.target.value.trim();
+  homeTimer = setTimeout(async () => {
+    const box = $("#home-results");
+    if (q.length < 2) return (box.innerHTML = "");
+    const r = await api(`/api/recherche?q=${encodeURIComponent(q)}`);
+    const looksLikeCode = /^[a-z]{0,3}[\s.-]?\d{1,4}[a-z]?$/i.test(q);
+    box.innerHTML = [
+      r.codes.length ? `<h4>Fiches codes erreur</h4>${r.codes.map(ficheItem).join("")}` : "",
+      looksLikeCode
+        ? `<button class="btn accent" id="home-code-btn">Chercher le code « ${esc(q)} » pour une marque…</button>`
+        : "",
+      r.equipements.length
+        ? `<h4>Parc</h4>${r.equipements.map((eq) => `<div class="item"><div class="grow"><div class="title">${esc(equipLabel(eq))}</div><div class="muted">${esc(eq.adresse || eq.reference || "")}</div></div><button class="btn small" data-equip-open="${esc(eq.id)}">Ouvrir</button></div>`).join("")}`
+        : "",
+      r.docs.length
+        ? `<h4>Dans vos documentations</h4>${r.docs.map((h) => `<div class="hit"><a href="/api/docs/${encodeURIComponent(h.docId)}/file#page=${h.page}" target="_blank">${esc(h.titre)} — p.${h.page}</a><div>${esc(h.extrait)}</div></div>`).join("")}`
+        : "",
+      !r.codes.length && !r.equipements.length && !r.docs.length && !looksLikeCode
+        ? `<button class="btn accent" id="home-ask-btn">Poser la question à l'assistant</button>`
+        : "",
+    ].join("");
+    $("#home-code-btn")?.addEventListener("click", () => {
+      showView("codes");
+      $("#code-form").code.value = q;
+      prefillCodeForm();
+      $("#code-form").marque.focus();
+    });
+    $("#home-ask-btn")?.addEventListener("click", () => startChatWith("question", q));
+  }, 250);
+});
+$("#home-results").addEventListener("click", (e) => {
+  const id = e.target.closest("[data-equip-open]")?.dataset.equipOpen;
+  if (id) openEquip(id);
+});
+
+// ---------- Pièces détachées ----------
+const STATUTS = { a_commander: "À commander", commandee: "Commandée", recue: "Reçue", posee: "Posée" };
+
+$("#piece-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const q = formData(e.target);
+  const status = $("#piece-status");
+  const box = $("#piece-results");
+  box.innerHTML = "";
+  let text = "";
+  status.innerHTML = `<span class="spinner"></span> Recherche…`;
+  try {
+    await streamPost("/api/pieces/trouver", q, (ev) => {
+      if (ev.type === "status") status.innerHTML = `<span class="spinner"></span> ${esc(ev.text)}`;
+      if (ev.type === "text") text += ev.text;
+      if (ev.type === "error") toast(ev.text, 6000);
+      if (ev.type === "result") {
+        box._items = ev.pieces;
+        box.innerHTML =
+          `<div class="muted">${md(text.split("```json")[0])}</div>` +
+          (ev.pieces
+            .map(
+              (p, i) => `<div class="item"><div class="grow">
+              <div class="title">${esc(p.designation)} ${p.reference ? `<span class="code-pill">${esc(p.reference)}</span>` : ""}</div>
+              <div class="muted">${esc([p.compatibilite, p.remarque, p.prix, p.source].filter(Boolean).join(" · "))}</div></div>
+              ${p.url ? `<a class="btn small" href="${esc(p.url)}" target="_blank" rel="noopener">Voir</a>` : ""}
+              <button class="btn small primary" data-piece-add="${i}">+ Liste</button></div>`,
+            )
+            .join("") || `<p class="muted">Aucune référence trouvée. Précisez le modèle ou le n° de série.</p>`);
+      }
+    });
+    status.textContent = "";
+  } catch (err) {
+    status.textContent = `Échec : ${err.message}`;
+  }
+});
+
+$("#piece-results").addEventListener("click", async (e) => {
+  const i = e.target.dataset.pieceAdd;
+  if (i === undefined) return;
+  const p = $("#piece-results")._items[Number(i)];
+  await api("/api/pieces", {
+    json: { designation: p.designation, reference: p.reference || "", url: p.url || "", source: p.source || "", prix: p.prix || "", equipementId: state.currentEquip },
+  });
+  e.target.textContent = "✓";
+  refreshData();
+});
+
+function renderPieces() {
+  $("#piece-list").innerHTML =
+    state.pieces
+      .map(
+        (p) => `<div class="item">
+        <div class="grow"><div class="title">${p.quantite} × ${esc(p.designation)} ${p.reference ? `<span class="code-pill">${esc(p.reference)}</span>` : ""}</div>
+          <div class="muted">${esc([getEquip(p.equipementId) && equipLabel(getEquip(p.equipementId)), p.prix, p.source].filter(Boolean).join(" · "))}</div></div>
+        <select data-piece-statut="${esc(p.id)}" style="width:auto">${Object.entries(STATUTS)
+          .map(([k, v]) => `<option value="${k}" ${k === p.statut ? "selected" : ""}>${v}</option>`)
+          .join("")}</select>
+        ${p.url ? `<a class="btn small" href="${esc(p.url)}" target="_blank" rel="noopener">↗</a>` : ""}
+        <button class="btn small danger" data-piece-del="${esc(p.id)}">✕</button>
+      </div>`,
+      )
+      .join("") || `<p class="muted">Aucune pièce. Ajoutez-en depuis une fiche code erreur ou une recherche.</p>`;
+}
+
+$("#piece-list").addEventListener("change", async (e) => {
+  const id = e.target.dataset.pieceStatut;
+  if (id) await api(`/api/pieces/${id}`, { method: "PATCH", json: { statut: e.target.value } });
+});
+$("#piece-list").addEventListener("click", async (e) => {
+  const id = e.target.dataset.pieceDel;
+  if (!id) return;
+  await api(`/api/pieces/${id}`, { method: "DELETE" });
+  refreshData();
+});
+$("#piece-add").addEventListener("click", async () => {
+  const designation = prompt("Désignation de la pièce ?");
+  if (!designation) return;
+  const reference = prompt("Référence (optionnel) ?") || "";
+  await api("/api/pieces", { json: { designation, reference, equipementId: state.currentEquip } });
+  refreshData();
+});
+$("#piece-copy").addEventListener("click", async () => {
+  const text = state.pieces
+    .filter((p) => p.statut === "a_commander")
+    .map((p) => `${p.quantite} x ${p.designation}${p.reference ? ` — réf. ${p.reference}` : ""}`)
+    .join("\n");
+  try {
+    await navigator.clipboard.writeText(text || "(aucune pièce à commander)");
+    toast("Liste des pièces à commander copiée");
+  } catch {
+    toast("Copie impossible sur ce navigateur");
+  }
+});
+
+// ---------- Rapport d'intervention ----------
+$("#chat-report").addEventListener("click", () => {
+  const s = state.session;
+  if (!s.messages.length) return toast("Aucun échange à mettre dans le rapport.");
+  const b = state.brand;
+  const eq = getEquip(s.equipId);
+  const pieces = state.pieces.filter((p) => eq && p.equipementId === eq.id);
+  const w = window.open("", "_blank");
+  if (!w) return toast("Autorisez les fenêtres pop-up pour générer le rapport.");
+  w.document.write(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Rapport d'intervention – ${esc(b.nom)}</title>
+  <style>
+    body { font: 13px/1.5 system-ui, sans-serif; color: #111; margin: 24px; }
+    header { display: flex; justify-content: space-between; align-items: center; border-bottom: 4px solid ${esc(b.couleurAccent)}; padding-bottom: 12px; }
+    header img { max-height: 70px; max-width: 240px; }
+    header .co { text-align: right; font-size: 12px; color: #444; }
+    h1 { color: ${esc(b.couleurPrimaire)}; font-size: 20px; margin: 18px 0 6px; }
+    h2 { color: ${esc(b.couleurPrimaire)}; font-size: 15px; border-bottom: 1px solid #ddd; padding-bottom: 3px; margin-top: 18px; }
+    table { border-collapse: collapse; width: 100%; } td, th { border: 1px solid #ddd; padding: 4px 8px; text-align: left; vertical-align: top; }
+    .q { background: #f3f5f8; border-left: 3px solid ${esc(b.couleurPrimaire)}; padding: 6px 10px; margin: 8px 0; white-space: pre-wrap; }
+    pre { white-space: pre-wrap; } .sign { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 30px; } .sign div { border: 1px solid #ccc; height: 90px; padding: 6px; }
+    @media print { button { display: none; } }
+  </style></head><body>
+  <header><img src="${location.origin}/brand/logo" alt="${esc(b.nom)}"><div class="co"><strong>${esc(b.nom)}</strong><br>${esc(b.slogan)}<br>${esc(b.adresse)}<br>${esc([b.telephone, b.email].filter(Boolean).join(" · "))}<br>${esc(b.site)}</div></header>
+  <h1>Rapport d'intervention</h1>
+  <div>Date : ${new Date(s.updatedAt).toLocaleString("fr-FR")}</div>
+  ${
+    eq
+      ? `<h2>Appareil</h2><table>${[
+          ["Client", eq.client], ["Adresse", eq.adresse], ["Type", eq.type_equipement], ["Marque / modèle", [eq.fabricant, eq.gamme, eq.modele].filter(Boolean).join(" ")],
+          ["Référence", eq.reference], ["N° de série", eq.numero_serie], ["Fluide", [eq.fluide_frigorigene, eq.charge_fluide].filter(Boolean).join(" – ")],
+        ]
+          .filter(([, v]) => v)
+          .map(([k, v]) => `<tr><th>${k}</th><td>${esc(v)}</td></tr>`)
+          .join("")}</table>`
+      : ""
+  }
+  <h2>Déroulé du diagnostic</h2>
+  ${s.messages.map((m) => (m.role === "user" ? `<div class="q">${esc(m.content)}</div>` : `<div>${md(m.content)}</div>`)).join("")}
+  ${pieces.length ? `<h2>Pièces</h2><table><tr><th>Qté</th><th>Désignation</th><th>Référence</th><th>Statut</th></tr>${pieces.map((p) => `<tr><td>${p.quantite}</td><td>${esc(p.designation)}</td><td>${esc(p.reference)}</td><td>${STATUTS[p.statut]}</td></tr>`).join("")}</table>` : ""}
+  <div class="sign"><div>Signature du technicien</div><div>Signature du client</div></div>
+  <p><button onclick="print()">Imprimer / enregistrer en PDF</button></p>
+  </body></html>`);
+  w.document.close();
+});
+
 // ---------- Démarrage ----------
 async function init() {
   newSession();
   try {
+    applyBrand(await api("/api/brand"));
     const status = await api("/api/status");
     if (!status.apiKey)
       $("#banner").innerHTML = `<div class="banner">Clé API Anthropic non configurée sur le serveur : l'assistant, le scan de plaque et la recherche de docs sont indisponibles. Les calculs fonctionnent.</div>`;

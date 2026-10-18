@@ -6,7 +6,9 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { MODEL, WEB_TOOLS, runStreaming, runParse, extractJsonBlock, apiErrorMessage } from "./lib/claude.js";
-import { EXPERT_SYSTEM, MODE_HINTS, PLAQUE_SYSTEM, DOCS_SYSTEM } from "./lib/prompts.js";
+import { EXPERT_SYSTEM, MODE_HINTS, PLAQUE_SYSTEM, DOCS_SYSTEM, CODE_SYSTEM, PIECES_SYSTEM } from "./lib/prompts.js";
+import { findCodes, normalizeCode, MARQUES } from "./lib/codes.js";
+import fs from "node:fs";
 import * as store from "./lib/store.js";
 import {
   addDocument,
@@ -34,9 +36,57 @@ if (PASSWORD) {
       const given = crypto.createHash("sha256").update(pass).digest();
       if (crypto.timingSafeEqual(given, expected)) return next();
     }
-    res.set("WWW-Authenticate", 'Basic realm="CVC Doctor"').status(401).send("Authentification requise");
+    res.set("WWW-Authenticate", 'Basic realm="OThermia"').status(401).send("Authentification requise");
   });
 }
+
+// --- Identité visuelle de l'entreprise (modifiable depuis l'écran Paramètres) ---
+const BRAND_FILE = path.join(store.DATA_DIR, "brand.json");
+const BRAND_DEFAULT = {
+  nom: "O'Thermia",
+  slogan: "Plomberie · Chauffage · Climatisation",
+  couleurPrimaire: "#12355b",
+  couleurAccent: "#f07d1a",
+  telephone: "",
+  email: "",
+  adresse: "",
+  site: "",
+};
+const readBrand = () => ({
+  ...BRAND_DEFAULT,
+  ...(fs.existsSync(BRAND_FILE) ? JSON.parse(fs.readFileSync(BRAND_FILE, "utf8")) : {}),
+});
+const LOGO_TYPES = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
+const customLogo = () =>
+  Object.values(LOGO_TYPES)
+    .map((ext) => path.join(store.BRAND_DIR, `logo.${ext}`))
+    .find((f) => fs.existsSync(f));
+
+app.get("/brand/logo", (_req, res) => {
+  res.set("Cache-Control", "no-cache");
+  res.sendFile(customLogo() || path.join(here, "public/brand/logo.svg"));
+});
+app.get("/manifest.webmanifest", (_req, res) => {
+  const b = readBrand();
+  const logo = customLogo();
+  res.type("application/manifest+json").send(
+    JSON.stringify({
+      name: `${b.nom} – Dépannage CVC`,
+      short_name: b.nom,
+      description: "Diagnostic de pannes, codes erreur, documentations et calculs pour PAC, climatisation et chaudières.",
+      lang: "fr",
+      start_url: "/",
+      display: "standalone",
+      background_color: b.couleurPrimaire,
+      theme_color: b.couleurPrimaire,
+      icons: [
+        logo
+          ? { src: "/brand/logo", sizes: "512x512", type: `image/${path.extname(logo).slice(1).replace("jpg", "jpeg")}`, purpose: "any" }
+          : { src: "/brand/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any maskable" },
+      ],
+    }),
+  );
+});
 
 app.use(express.static(path.join(here, "public")));
 app.get("/vendor/marked.js", (_req, res) => res.sendFile(path.join(here, "node_modules/marked/lib/marked.esm.js")));
@@ -283,9 +333,179 @@ ${q.besoin ? `Besoin particulier : ${q.besoin}` : "Je veux toutes les notices ut
   }),
 );
 
+app.get("/api/brand", (_req, res) => res.json({ ...readBrand(), logoPerso: Boolean(customLogo()) }));
+app.put("/api/brand", (req, res) => {
+  const color = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+  const brand = z
+    .object({
+      nom: z.string().max(80),
+      slogan: z.string().max(160),
+      couleurPrimaire: color,
+      couleurAccent: color,
+      telephone: z.string().max(40),
+      email: z.string().max(120),
+      adresse: z.string().max(240),
+      site: z.string().max(160),
+    })
+    .partial()
+    .safeParse(req.body);
+  if (!brand.success) return res.status(400).json({ error: "Données invalides (couleurs au format #RRGGBB)." });
+  const next = { ...readBrand(), ...brand.data };
+  delete next.logoPerso;
+  fs.writeFileSync(BRAND_FILE, JSON.stringify(next, null, 2));
+  res.json(next);
+});
+const logoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 3 * 1024 * 1024 } });
+app.post("/api/brand/logo", logoUpload.single("logo"), (req, res) => {
+  const ext = req.file && LOGO_TYPES[req.file.mimetype];
+  if (!ext) return res.status(400).json({ error: "Logo attendu au format PNG, JPEG ou WebP (3 Mo maxi)." });
+  for (const e of Object.values(LOGO_TYPES)) fs.rmSync(path.join(store.BRAND_DIR, `logo.${e}`), { force: true });
+  fs.writeFileSync(path.join(store.BRAND_DIR, `logo.${ext}`), req.file.buffer);
+  res.json({ ok: true });
+});
+app.delete("/api/brand/logo", (_req, res) => {
+  for (const e of Object.values(LOGO_TYPES)) fs.rmSync(path.join(store.BRAND_DIR, `logo.${e}`), { force: true });
+  res.json({ ok: true });
+});
+
+// --- Base de codes erreur (enrichie à chaque recherche, consultable hors ligne) ---
+app.get("/api/marques", (_req, res) => {
+  const known = new Set(MARQUES);
+  for (const e of store.list("equipements")) if (e.fabricant) known.add(e.fabricant);
+  for (const c of store.list("codes")) if (c.marque) known.add(c.marque);
+  res.json([...known].sort((a, b) => a.localeCompare(b, "fr")));
+});
+
+app.get("/api/codes", (req, res) => {
+  res.json(findCodes({ marque: req.query.marque, code: req.query.code, q: req.query.q }));
+});
+
+app.patch("/api/codes/:id", (req, res) => {
+  const patch = {};
+  if (typeof req.body?.favori === "boolean") patch.favori = req.body.favori;
+  if (typeof req.body?.notes === "string") patch.notes = req.body.notes.slice(0, 5000);
+  const item = store.update("codes", req.params.id, patch);
+  item ? res.json(item) : res.status(404).json({ error: "Introuvable" });
+});
+app.delete("/api/codes/:id", (req, res) => res.json({ ok: store.remove("codes", req.params.id) }));
+
+app.post(
+  "/api/codes/recherche",
+  wrap(async (req, res) => {
+    const q = z
+      .object({ marque: z.string().min(1).max(80), modele: z.string().max(120).default(""), code: z.string().min(1).max(40) })
+      .parse(req.body);
+    const emit = sse(res);
+    const controller = new AbortController();
+    res.on("close", () => controller.abort());
+    const { context, sources } = buildDocContext(`${q.code} ${q.modele}`, { fabricant: q.marque, modele: q.modele });
+    if (sources.length) emit({ type: "sources", sources });
+    const text = await runStreaming({
+      system: CODE_SYSTEM,
+      messages: [
+        {
+          role: "user",
+          content: `${context ? `<extraits_documentation>\n${context}\n</extraits_documentation>\n\n` : ""}Marque : ${q.marque}\nModèle : ${q.modele || "non précisé"}\nCode défaut : ${q.code}`,
+        },
+      ],
+      tools: WEB_TOOLS(6, 3),
+      effort: "medium",
+      emit,
+      signal: controller.signal,
+    });
+    const fiche = extractJsonBlock(text);
+    if (fiche && typeof fiche === "object" && !Array.isArray(fiche)) {
+      const saved = store.insert("codes", {
+        ...fiche,
+        marque: fiche.marque || q.marque,
+        modele: fiche.modele || q.modele,
+        code: fiche.code || q.code,
+        codeNorm: normalizeCode(fiche.code || q.code),
+        docsLocales: sources.slice(0, 5).map(({ docId, titre, page }) => ({ docId, titre, page })),
+        favori: false,
+      });
+      emit({ type: "fiche", fiche: saved });
+    } else emit({ type: "error", text: "Fiche non structurée : consultez le texte ci-dessus." });
+    emit({ type: "done" });
+    res.end();
+  }),
+);
+
+// --- Pièces détachées ---
+app.post(
+  "/api/pieces/trouver",
+  wrap(async (req, res) => {
+    const q = z
+      .object({
+        marque: z.string().max(80).default(""),
+        modele: z.string().max(160).default(""),
+        piece: z.string().min(2).max(300),
+      })
+      .parse(req.body);
+    const emit = sse(res);
+    const controller = new AbortController();
+    res.on("close", () => controller.abort());
+    const text = await runStreaming({
+      system: PIECES_SYSTEM,
+      messages: [{ role: "user", content: `Appareil : ${q.marque} ${q.modele}\nPièce recherchée : ${q.piece}` }],
+      tools: WEB_TOOLS(8, 4),
+      effort: "medium",
+      emit,
+      signal: controller.signal,
+    });
+    const found = extractJsonBlock(text);
+    emit({
+      type: "result",
+      pieces: Array.isArray(found) ? found.map((p) => ({ ...p, url: /^https?:\/\//.test(p?.url) ? p.url : "" })) : [],
+    });
+    emit({ type: "done" });
+    res.end();
+  }),
+);
+
+app.get("/api/pieces", (_req, res) => res.json(store.list("pieces")));
+app.post("/api/pieces", (req, res) => {
+  const p = z
+    .object({
+      designation: z.string().min(1).max(300),
+      reference: z.string().max(120).default(""),
+      quantite: z.number().int().min(1).max(999).default(1),
+      url: z.string().max(1000).default(""),
+      source: z.string().max(120).default(""),
+      prix: z.string().max(60).default(""),
+      equipementId: z.string().max(40).default(""),
+      statut: z.enum(["a_commander", "commandee", "recue", "posee"]).default("a_commander"),
+    })
+    .safeParse(req.body);
+  if (!p.success) return res.status(400).json({ error: "Données invalides." });
+  res.json(store.insert("pieces", p.data));
+});
+app.patch("/api/pieces/:id", (req, res) => {
+  const allowed = ["statut", "quantite", "reference", "designation", "equipementId"];
+  const patch = Object.fromEntries(Object.entries(req.body || {}).filter(([k]) => allowed.includes(k)));
+  const item = store.update("pieces", req.params.id, patch);
+  item ? res.json(item) : res.status(404).json({ error: "Introuvable" });
+});
+app.delete("/api/pieces/:id", (req, res) => res.json({ ok: store.remove("pieces", req.params.id) }));
+
+// --- Recherche globale (accueil) ---
+app.get("/api/recherche", (req, res) => {
+  const q = String(req.query.q || "").trim();
+  if (q.length < 2) return res.json({ codes: [], docs: [], equipements: [] });
+  const needle = q.toLowerCase();
+  res.json({
+    codes: findCodes({ q }).slice(0, 15),
+    docs: searchDocuments(q, { limit: 8 }).map(({ texte, ...rest }) => rest),
+    equipements: store
+      .list("equipements")
+      .filter((e) => JSON.stringify(e).toLowerCase().includes(needle))
+      .slice(0, 10),
+  });
+});
+
 const PORT = Number(process.env.PORT || 3000);
 app.listen(PORT, () => {
-  console.log(`CVC Doctor prêt sur http://localhost:${PORT}`);
+  console.log(`O'Thermia prêt sur http://localhost:${PORT}`);
   if (!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN)
     console.warn("⚠ ANTHROPIC_API_KEY non défini : l'assistant, le scan et la recherche web ne fonctionneront pas.");
   if (!PASSWORD) console.warn("⚠ APP_PASSWORD non défini : l'application est accessible sans mot de passe.");
