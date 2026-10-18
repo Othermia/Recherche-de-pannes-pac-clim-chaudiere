@@ -8,6 +8,7 @@ import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { MODEL, WEB_TOOLS, runStreaming, runParse, extractJsonBlock, apiErrorMessage } from "./lib/claude.js";
 import { EXPERT_SYSTEM, MODE_HINTS, PLAQUE_SYSTEM, DOCS_SYSTEM, CODE_SYSTEM, PIECES_SYSTEM } from "./lib/prompts.js";
 import { findCodes, normalizeCode, MARQUES } from "./lib/codes.js";
+import { DEMO } from "./lib/demo.js";
 import fs from "node:fs";
 import * as store from "./lib/store.js";
 import {
@@ -127,7 +128,7 @@ function equipementSummary(e) {
 }
 
 app.get("/api/status", (_req, res) => {
-  res.json({ apiKey: Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN), model: MODEL });
+  res.json({ apiKey: Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN), demo: DEMO, model: MODEL });
 });
 
 // --- Assistant expert (diagnostic / paramétrage / question) ---
@@ -508,6 +509,6 @@ const PORT = Number(process.env.PORT || 3000);
 app.listen(PORT, () => {
   console.log(`O'Thermia prêt sur http://localhost:${PORT}`);
   if (!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN)
-    console.warn("⚠ ANTHROPIC_API_KEY non défini : l'assistant, le scan et la recherche web ne fonctionneront pas.");
+    console.warn("ℹ ANTHROPIC_API_KEY non défini : MODE DÉMO (réponses d'exemple pour l'assistant, le scan et les recherches).");
   if (!PASSWORD) console.warn("⚠ APP_PASSWORD non défini : l'application est accessible sans mot de passe.");
 });

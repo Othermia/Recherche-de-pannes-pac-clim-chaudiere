@@ -1111,7 +1111,7 @@ function renderFiche(f) {
         <h2 style="margin:0">${esc(f.titre || "Défaut")}</h2>
         <div class="muted">${esc([f.marque, f.modele].filter(Boolean).join(" · "))}</div>
         <div class="row" style="margin-top:4px"><span class="cat ${esc(f.categorie)}">${esc(CAT_LABELS[f.categorie] || f.categorie || "")}</span>
-          <span class="badge ${f.confiance === "haute" ? "ok" : "warn"}">fiabilité ${esc(f.confiance || "?")}</span></div>
+          <span class="badge ${f.confiance === "haute" ? "ok" : "warn"}">fiabilité ${esc(f.confiance || "?")}</span>${f.demo ? `<span class="badge warn">exemple démo</span>` : ""}</div>
       </div>
     </div>
     ${f.securite ? `<div class="banner" style="margin:12px 0 0">⚠️ ${esc(f.securite)}</div>` : ""}
@@ -1449,8 +1449,13 @@ async function init() {
   try {
     applyBrand(await api("/api/brand"));
     const status = await api("/api/status");
-    if (!status.apiKey)
-      $("#banner").innerHTML = `<div class="banner">Clé API Anthropic non configurée sur le serveur : l'assistant, le scan de plaque et la recherche de docs sont indisponibles. Les calculs fonctionnent.</div>`;
+    if (status.demo && !storage.get("cvc.demoBannerClosed", false)) {
+      $("#banner").innerHTML = `<div class="banner row" style="flex-wrap:nowrap"><span style="flex:1">🧪 <strong>Mode démo</strong> : l'IA donne des réponses d'exemple. Calculs, docs PDF, parc, pièces et rapports sont réels.</span><button class="btn small" id="banner-close" aria-label="Fermer">✕</button></div>`;
+      $("#banner-close").onclick = () => {
+        storage.set("cvc.demoBannerClosed", true);
+        $("#banner").innerHTML = "";
+      };
+    }
     await refreshData();
   } catch (err) {
     $("#banner").innerHTML = `<div class="banner">Serveur injoignable (${esc(err.message)}). Mode hors ligne : seuls les calculs sont disponibles.</div>`;

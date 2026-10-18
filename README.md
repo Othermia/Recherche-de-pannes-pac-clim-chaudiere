@@ -14,6 +14,10 @@ Application web professionnelle aux couleurs d'O'Thermia (logo, bleu #082da0, ro
 | **Parc** | Fiches des appareils (client, site, données de plaque, notes), docs liées, accès direct au diagnostic ou au paramétrage. |
 | **Calculs** | Débit (eau ou eau glycolée), contrôle de puissance transmise, dimensionnement des tuyauteries (vitesse et Pa/m : cuivre, multicouche, PER, acier), **loi d'eau** physique selon les émetteurs (courbe, tableau, réglage 2 points et pente équivalente), vase d'expansion (pré-gonflage, pression de remplissage), volume mini / ballon tampon anti-court-cycle, surchauffe et sous-refroidissement avec pré-diagnostic, Kv de vanne, déperditions rapides, conversions. Un bouton envoie les calculs à l'expert pour obtenir une fiche de réglage complète. Les calculs fonctionnent hors ligne. |
 
+## Mode démo (gratuit, sans clé API)
+
+Sans `ANTHROPIC_API_KEY`, l'application démarre en **mode démo**. L'assistant, la lecture de plaque, les codes erreur et les recherches de pièces ou de notices renvoient alors des réponses d'exemple, clairement signalées. Tout le reste fonctionne normalement : calculs, bibliothèque PDF et recherche dedans, parc, liste de pièces, paramètres, logo et rapports. Il suffit d'ajouter la clé pour passer en mode réel. `DEMO=1` force le mode démo même si une clé est présente.
+
 ## Installation
 
 Il faut Node.js 22 ou plus récent et une clé API Anthropic (https://console.anthropic.com).
