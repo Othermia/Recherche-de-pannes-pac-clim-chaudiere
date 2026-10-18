@@ -1130,6 +1130,13 @@ function renderFiche(f) {
       .join("")}</div>` : ""}
     ${f.reinitialisation ? `<h3>Réinitialisation</h3><p>${esc(f.reinitialisation)}</p>` : ""}
     ${
+      has(f.docsLocales) && f.docsLocales.some((d) => d.extrait)
+        ? `<h3>📚 Dans vos notices</h3><div class="list">${f.docsLocales
+            .map((d) => `<div class="hit"><a href="/api/docs/${encodeURIComponent(d.docId)}/file#page=${d.page}" target="_blank">${esc(d.titre)} — page ${d.page}</a><div>${esc(d.extrait || "")}</div></div>`)
+            .join("")}</div>`
+        : ""
+    }
+    ${
       has(f.docsLocales) || has(f.sources)
         ? `<div class="sources muted" style="margin-top:10px">Sources : ${[
             ...(f.docsLocales || []).map((d) => `<a href="/api/docs/${encodeURIComponent(d.docId)}/file#page=${d.page}" target="_blank">${esc(d.titre)} p.${d.page}</a>`),
@@ -1139,9 +1146,13 @@ function renderFiche(f) {
     }
     <div class="row" style="margin-top:12px">
       <button class="btn primary" data-fact="diag">🩺 Diagnostic guidé</button>
-      <button class="btn" data-fact="fav">${f.favori ? "★ Retirer des favoris" : "☆ Favori"}</button>
+      ${
+        f.demo
+          ? ""
+          : `<button class="btn" data-fact="fav">${f.favori ? "★ Retirer des favoris" : "☆ Favori"}</button>
       <button class="btn" data-fact="refresh">Mettre à jour</button>
-      <button class="btn danger" data-fact="del">Supprimer</button>
+      <button class="btn danger" data-fact="del">Supprimer</button>`
+      }
     </div>
   </div>`;
 }
@@ -1153,7 +1164,7 @@ function showFiches(fiches) {
 $("#code-result").addEventListener("click", async (e) => {
   const card = e.target.closest(".fiche");
   if (!card) return;
-  const f = state.codes.find((x) => x.id === card.dataset.id);
+  const f = state.codes.find((x) => x.id === card.dataset.id) || (state.demoFiche?.id === card.dataset.id && state.demoFiche);
   if (!f) return;
   const t = e.target.closest("button");
   if (!t) return;
@@ -1213,11 +1224,14 @@ async function lookupCode(q, forceOnline = false) {
       }
       if (ev.type === "error") toast(ev.text, 6000);
       if (ev.type === "fiche") {
-        state.codes.unshift(ev.fiche);
+        if (ev.fiche.demo) state.demoFiche = ev.fiche;
+        else state.codes.unshift(ev.fiche);
         showFiches([ev.fiche]);
       }
     });
-    status.textContent = "Fiche enregistrée dans votre base (consultable hors ligne).";
+    status.textContent = state.demoFiche?.code === q.code
+      ? "Mode démo : fiche non enregistrée. Ajoutez la clé API pour obtenir la fiche complète."
+      : "Fiche enregistrée dans votre base (consultable hors ligne).";
     refreshData();
   } catch (err) {
     status.textContent = `Échec : ${err.message}`;

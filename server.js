@@ -8,7 +8,8 @@ import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { MODEL, WEB_TOOLS, runStreaming, runParse, extractJsonBlock, apiErrorMessage } from "./lib/claude.js";
 import { EXPERT_SYSTEM, MODE_HINTS, PLAQUE_SYSTEM, DOCS_SYSTEM, CODE_SYSTEM, PIECES_SYSTEM } from "./lib/prompts.js";
 import { findCodes, normalizeCode, MARQUES } from "./lib/codes.js";
-import { DEMO } from "./lib/demo.js";
+import { DEMO, demoCodeFiche } from "./lib/demo.js";
+import { normalize } from "./lib/docs.js";
 import fs from "node:fs";
 import * as store from "./lib/store.js";
 import {
@@ -402,6 +403,16 @@ app.post(
     res.on("close", () => controller.abort());
     const { context, sources } = buildDocContext(`${q.code} ${q.modele}`, { fabricant: q.marque, modele: q.modele });
     if (sources.length) emit({ type: "sources", sources });
+    if (DEMO) {
+      // Mode démo : rien d'inventé, seulement les pages de notices qui contiennent le code.
+      const code = normalize(q.code).replace(/[^a-z0-9]/g, "");
+      const re = new RegExp(`(?<![a-z0-9])${code}(?![a-z0-9])`);
+      const hits = code ? searchDocuments(q.code, { limit: 10 }).filter((h) => re.test(normalize(h.texte))) : [];
+      emit({ type: "text", text: "Mode démo : fiche construite à partir de vos notices importées, sans IA." });
+      emit({ type: "fiche", fiche: demoCodeFiche(q, hits) });
+      emit({ type: "done" });
+      return res.end();
+    }
     const text = await runStreaming({
       system: CODE_SYSTEM,
       messages: [
