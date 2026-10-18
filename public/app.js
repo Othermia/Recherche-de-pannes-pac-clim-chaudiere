@@ -8,6 +8,7 @@ const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const fmt = (n, d = 2) => (Number.isFinite(n) ? n.toLocaleString("fr-FR", { maximumFractionDigits: d, minimumFractionDigits: 0 }) : "–");
 const md = (text) => DOMPurify.sanitize(marked.parse(text || ""));
+const usd = (n) => (n > 0 && n < 0.01 ? "< 0,01 $" : `${(n || 0).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`);
 const num = (id) => parseFloat($(`#${id}`).value.replace(",", "."));
 
 function toast(text, ms = 3000) {
@@ -248,7 +249,7 @@ function renderMessage(m) {
   if (m.role === "user") {
     return `<div class="msg user">${esc(m.content)}${m.photos ? `<div class="muted" style="color:#dbe7ff">📷 ${m.photos} photo(s) jointe(s)</div>` : ""}</div>`;
   }
-  return `<div class="msg assistant">${md(m.content)}${renderSources(m.sources)}</div>`;
+  return `<div class="msg assistant">${md(m.content)}${renderSources(m.sources)}${costLine(m.cost)}</div>`;
 }
 
 $("#chat-log").addEventListener("click", (e) => {
@@ -341,7 +342,8 @@ async function sendChat(text) {
     bubble.innerHTML =
       md(reply.content) +
       (state.busy ? `<div class="status"><span class="spinner"></span> ${esc(status)}</div>` : "") +
-      renderSources(reply.sources);
+      renderSources(reply.sources) +
+      costLine(reply.cost);
     if (nearBottom) log.scrollTop = log.scrollHeight;
   };
   const schedule = () => {
@@ -366,6 +368,7 @@ async function sendChat(text) {
         if (ev.type === "text") reply.content += ev.text;
         else if (ev.type === "status") status = ev.text;
         else if (ev.type === "sources") reply.sources = ev.sources;
+        else if (ev.type === "cost") reply.cost = ev.cost;
         else if (ev.type === "error") reply.content += `\n\n**Erreur :** ${ev.text}`;
         schedule();
       },
@@ -1043,11 +1046,14 @@ $("#settings-btn").addEventListener("click", () => {
       <label class="f full">Adresse<input name="adresse" value="${esc(b.adresse)}"></label>
       <label class="f full">Site web<input name="site" value="${esc(b.site)}"></label>
     </form>
+    <h3>Intelligence artificielle et consommation</h3>
+    <div id="ia-settings" class="muted"><span class="spinner"></span> Chargement…</div>
     <p class="muted">Logo : PNG ou JPEG, de préférence horizontal et sur fond transparent ou blanc. Il apparaît dans l'en-tête et sur les rapports d'intervention.</p>
     <div class="row" style="margin-top:12px;justify-content:flex-end">
       <button class="btn" data-act="close">Annuler</button><button class="btn primary" data-act="save">Enregistrer</button>
     </div>`;
   const form = $("#brand-form");
+  loadIaSettings();
   form.addEventListener("input", () => {
     const d = formData(form);
     applyBrand({ ...state.brand, ...d });
@@ -1079,6 +1085,8 @@ $("#settings-btn").addEventListener("click", () => {
     if (act === "save") {
       try {
         const saved = await api("/api/brand", { method: "PUT", json: formData(form) });
+        const ia = $("#ia-form");
+        if (ia) await api("/api/reglages", { method: "PUT", json: { profil: ia.profil.value, budgetMensuel: Number(ia.budget.value) || 0 } });
         applyBrand({ ...saved, logoPerso: b.logoPerso });
         dlg.close();
         toast("Paramètres enregistrés");
@@ -1214,6 +1222,7 @@ async function lookupCode(q, forceOnline = false) {
   }
   $("#code-result").innerHTML = `<div class="card"><div class="msg assistant" id="code-live" style="border:0;padding:0"></div></div>`;
   let text = "";
+  let lastCost = null;
   status.innerHTML = `<span class="spinner"></span> Recherche de ${esc(q.code)} chez ${esc(q.marque)}…`;
   try {
     await streamPost("/api/codes/recherche", q, (ev) => {
@@ -1223,6 +1232,7 @@ async function lookupCode(q, forceOnline = false) {
         $("#code-live").innerHTML = md(text.split("```json")[0]);
       }
       if (ev.type === "error") toast(ev.text, 6000);
+      if (ev.type === "cost") lastCost = ev.cost;
       if (ev.type === "fiche") {
         if (ev.fiche.demo) state.demoFiche = ev.fiche;
         else state.codes.unshift(ev.fiche);
@@ -1231,7 +1241,7 @@ async function lookupCode(q, forceOnline = false) {
     });
     status.textContent = state.demoFiche?.code === q.code
       ? "Mode démo : fiche non enregistrée. Ajoutez la clé API pour obtenir la fiche complète."
-      : "Fiche enregistrée dans votre base (consultable hors ligne).";
+      : `Fiche enregistrée dans votre base (consultable hors ligne).${lastCost != null ? ` Coût : ${usd(lastCost)}.` : ""}`;
     refreshData();
   } catch (err) {
     status.textContent = `Échec : ${err.message}`;
@@ -1456,6 +1466,48 @@ $("#chat-report").addEventListener("click", () => {
   </body></html>`);
   w.document.close();
 });
+
+
+// ---------- Réglages IA et consommation ----------
+const TACHES = { diagnostic: "Diagnostic / réglage", code: "Codes erreur", plaque: "Scan de plaque", docs: "Recherche de notices", pieces: "Pièces détachées" };
+
+function costLine(cost) {
+  return cost != null ? `<div class="muted" style="font-size:11px;margin-top:6px">Coût de cette réponse : ${usd(cost)}</div>` : "";
+}
+
+async function loadIaSettings() {
+  const box = $("#ia-settings");
+  try {
+    const r = await api("/api/reglages");
+    const c = r.consommation;
+    box.classList.remove("muted");
+    box.innerHTML = `
+      ${r.demo ? `<p class="banner" style="margin:0 0 8px">Mode démo : aucune consommation tant que la clé API n'est pas configurée.</p>` : ""}
+      <form class="grid" id="ia-form">
+        <label class="f full">Modèle d'IA
+          <select name="profil" ${r.modeleForce ? "disabled" : ""}>${Object.entries(r.profils)
+            .map(([k, label]) => `<option value="${k}" ${k === r.profil ? "selected" : ""}>${esc(label)}</option>`)
+            .join("")}</select>
+        </label>
+        <label class="f">Plafond mensuel ($, 0 = aucun)<input name="budget" type="number" min="0" step="5" value="${r.budgetMensuel || 0}"></label>
+      </form>
+      ${r.modeleForce ? `<p class="muted">Modèle imposé par le serveur (CLAUDE_MODEL = ${esc(r.modeleForce)}).</p>` : ""}
+      <p class="muted">Sonnet 5.5 coûte environ deux fois moins cher qu'Opus 5.5. Opus reste plus fin sur les pannes difficiles. Au-delà du plafond, l'IA se met en pause jusqu'au mois suivant.</p>
+      <div class="result">
+        <table>
+          <tr><th>Aujourd'hui</th><td>${usd(c.jour.cost)}</td><td>${c.jour.appels} appel(s)</td></tr>
+          <tr><th>Ce mois-ci</th><td><strong>${usd(c.mois.cost)}</strong></td><td>${c.mois.appels} appel(s)</td></tr>
+          <tr><th>Mois précédent</th><td>${usd(c.moisPrecedent.cost)}</td><td>${c.moisPrecedent.appels} appel(s)</td></tr>
+          ${Object.entries(c.parTache)
+            .map(([t, v]) => `<tr><td>· ${esc(TACHES[t] || t)}</td><td>${usd(v.cost)}</td><td>${v.appels}</td></tr>`)
+            .join("")}
+        </table>
+        <p class="muted" style="margin:8px 0 0">Montants calculés d'après les tarifs Anthropic, en dollars (facturation de la clé API). Le relevé exact est dans console.anthropic.com.</p>
+      </div>`;
+  } catch (err) {
+    box.textContent = `Réglages indisponibles : ${err.message}`;
+  }
+}
 
 // ---------- Démarrage ----------
 async function init() {

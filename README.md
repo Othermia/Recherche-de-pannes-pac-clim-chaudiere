@@ -43,6 +43,15 @@ Si `APP_PASSWORD` est défini, le navigateur demande un mot de passe (n'importe 
 
 Touchez la roue dentée ⚙️ en haut à droite : logo (PNG/JPEG/WebP), nom, slogan, couleur principale, couleur d'accent, téléphone, e-mail, adresse et site. Les changements s'appliquent immédiatement à l'appli, à l'icône du téléphone et aux rapports. Le logo O'Thermia est installé par défaut (`public/brand/logo.png`, icônes `icon-192.png` et `icon-512.png`).
 
+## Coût et choix du modèle d'IA
+
+Dans ⚙️ Paramètres, rubrique « Intelligence artificielle et consommation » :
+- **Modèle** : *Expert* (Claude Opus 5.5 partout, par défaut), *Mixte* (Opus pour le diagnostic, Sonnet 5.5 pour les codes, notices, pièces et plaques) ou *Économique* (Sonnet 5.5 partout, environ deux fois moins cher).
+- **Plafond mensuel** en dollars : une fois atteint, l'IA se met en pause jusqu'au mois suivant.
+- **Consommation** : dépense du jour, du mois en cours (par type d'action) et du mois précédent, calculée d'après les tarifs Anthropic. Le coût de chaque réponse s'affiche aussi sous la réponse.
+
+Le relevé de consommation est enregistré dans `DATA_DIR/consommation.jsonl` et les réglages dans `DATA_DIR/reglages.json`. La variable `CLAUDE_MODEL` impose un modèle unique et désactive ce choix.
+
 ## Données
 
 Tout est stocké dans `DATA_DIR` (par défaut `./data`) :

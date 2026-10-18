@@ -5,10 +5,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
-import { MODEL, WEB_TOOLS, runStreaming, runParse, extractJsonBlock, apiErrorMessage } from "./lib/claude.js";
+import { WEB_TOOLS, runStreaming, runParse, extractJsonBlock, apiErrorMessage } from "./lib/claude.js";
 import { EXPERT_SYSTEM, MODE_HINTS, PLAQUE_SYSTEM, DOCS_SYSTEM, CODE_SYSTEM, PIECES_SYSTEM } from "./lib/prompts.js";
 import { findCodes, normalizeCode, MARQUES } from "./lib/codes.js";
 import { DEMO, demoCodeFiche } from "./lib/demo.js";
+import { PROFILS, readSettings, writeSettings, modelFor } from "./lib/settings.js";
+import { summary as usageSummary } from "./lib/usage.js";
 import { normalize } from "./lib/docs.js";
 import fs from "node:fs";
 import * as store from "./lib/store.js";
@@ -129,7 +131,7 @@ function equipementSummary(e) {
 }
 
 app.get("/api/status", (_req, res) => {
-  res.json({ apiKey: Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN), demo: DEMO, model: MODEL });
+  res.json({ apiKey: Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN), demo: DEMO, model: modelFor("diagnostic") });
 });
 
 // --- Assistant expert (diagnostic / paramétrage / question) ---
@@ -181,6 +183,7 @@ app.post(
     res.on("close", () => controller.abort());
     await runStreaming({
       system: EXPERT_SYSTEM,
+      task: "diagnostic",
       messages,
       tools: WEB_TOOLS(6, 4),
       effort: "high",
@@ -313,6 +316,7 @@ app.post(
     res.on("close", () => controller.abort());
     const text = await runStreaming({
       system: DOCS_SYSTEM,
+      task: "docs",
       messages: [
         {
           role: "user",
@@ -371,6 +375,25 @@ app.delete("/api/brand/logo", (_req, res) => {
   res.json({ ok: true });
 });
 
+// --- Réglages IA et consommation ---
+app.get("/api/reglages", (_req, res) => {
+  res.json({
+    ...readSettings(),
+    profils: Object.fromEntries(Object.entries(PROFILS).map(([k, p]) => [k, p.label])),
+    modeleForce: process.env.CLAUDE_MODEL || "",
+    demo: DEMO,
+    consommation: usageSummary(),
+  });
+});
+app.put("/api/reglages", (req, res) => {
+  const r = z
+    .object({ profil: z.enum(Object.keys(PROFILS)), budgetMensuel: z.number().min(0).max(100000) })
+    .partial()
+    .safeParse(req.body);
+  if (!r.success) return res.status(400).json({ error: "Réglages invalides." });
+  res.json(writeSettings(r.data));
+});
+
 // --- Base de codes erreur (enrichie à chaque recherche, consultable hors ligne) ---
 app.get("/api/marques", (_req, res) => {
   const known = new Set(MARQUES);
@@ -415,6 +438,7 @@ app.post(
     }
     const text = await runStreaming({
       system: CODE_SYSTEM,
+      task: "code",
       messages: [
         {
           role: "user",
@@ -460,6 +484,7 @@ app.post(
     res.on("close", () => controller.abort());
     const text = await runStreaming({
       system: PIECES_SYSTEM,
+      task: "pieces",
       messages: [{ role: "user", content: `Appareil : ${q.marque} ${q.modele}\nPièce recherchée : ${q.piece}` }],
       tools: WEB_TOOLS(8, 4),
       effort: "medium",
