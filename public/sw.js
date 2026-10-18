@@ -1,6 +1,6 @@
 // Cache de l'interface pour un démarrage rapide et l'accès aux calculs hors ligne.
-const CACHE = "othermia-v2";
-const SHELL = ["/", "/index.html", "/styles.css", "/app.js", "/calc.js", "/brand/icon.svg", "/brand/logo.svg", "/vendor/marked.js", "/vendor/purify.js"];
+const CACHE = "othermia-v3";
+const SHELL = ["/", "/index.html", "/styles.css", "/app.js", "/calc.js", "/brand/logo.png", "/brand/icon-192.png", "/vendor/marked.js", "/vendor/purify.js"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)));

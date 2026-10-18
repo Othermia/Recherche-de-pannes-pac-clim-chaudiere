@@ -1411,7 +1411,7 @@ $("#chat-report").addEventListener("click", () => {
   <style>
     body { font: 13px/1.5 system-ui, sans-serif; color: #111; margin: 24px; }
     header { display: flex; justify-content: space-between; align-items: center; border-bottom: 4px solid ${esc(b.couleurAccent)}; padding-bottom: 12px; }
-    header img { max-height: 70px; max-width: 240px; }
+    header img { max-height: 110px; max-width: 240px; }
     header .co { text-align: right; font-size: 12px; color: #444; }
     h1 { color: ${esc(b.couleurPrimaire)}; font-size: 20px; margin: 18px 0 6px; }
     h2 { color: ${esc(b.couleurPrimaire)}; font-size: 15px; border-bottom: 1px solid #ddd; padding-bottom: 3px; margin-top: 18px; }

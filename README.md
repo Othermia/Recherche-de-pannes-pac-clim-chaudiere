@@ -1,6 +1,6 @@
 # O'Thermia : dépannage PAC, climatisation et chaudières
 
-Application web professionnelle aux couleurs d'O'Thermia, installable sur téléphone (PWA), pour les techniciens chauffagistes et frigoristes. Son principe s'inspire d'Editherm Mobility : marque, code erreur, fiche de panne, pièces à contrôler et notices. Elle y ajoute un assistant de diagnostic, la lecture de plaques signalétiques et les calculs de réglage.
+Application web professionnelle aux couleurs d'O'Thermia (logo, bleu #082da0, rouge #b70b2c), installable sur téléphone (PWA), pour les techniciens chauffagistes et frigoristes. Son principe s'inspire d'Editherm Mobility : marque, code erreur, fiche de panne, pièces à contrôler et notices. Elle y ajoute un assistant de diagnostic, la lecture de plaques signalétiques et les calculs de réglage.
 
 | Module | Ce qu'il fait |
 |---|---|
@@ -37,7 +37,7 @@ Si `APP_PASSWORD` est défini, le navigateur demande un mot de passe (n'importe 
 
 ## Personnaliser le logo et les couleurs
 
-Touchez la roue dentée ⚙️ en haut à droite : logo (PNG/JPEG/WebP), nom, slogan, couleur principale, couleur d'accent, téléphone, e-mail, adresse et site. Les changements s'appliquent immédiatement à l'appli, à l'icône du téléphone et aux rapports. Le logo fourni par défaut est un logo provisoire : remplacez-le par le vôtre.
+Touchez la roue dentée ⚙️ en haut à droite : logo (PNG/JPEG/WebP), nom, slogan, couleur principale, couleur d'accent, téléphone, e-mail, adresse et site. Les changements s'appliquent immédiatement à l'appli, à l'icône du téléphone et aux rapports. Le logo O'Thermia est installé par défaut (`public/brand/logo.png`, icônes `icon-192.png` et `icon-512.png`).
 
 ## Données
 

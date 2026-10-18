@@ -45,8 +45,8 @@ const BRAND_FILE = path.join(store.DATA_DIR, "brand.json");
 const BRAND_DEFAULT = {
   nom: "O'Thermia",
   slogan: "Plomberie · Chauffage · Climatisation",
-  couleurPrimaire: "#12355b",
-  couleurAccent: "#f07d1a",
+  couleurPrimaire: "#082da0",
+  couleurAccent: "#b70b2c",
   telephone: "",
   email: "",
   adresse: "",
@@ -64,7 +64,7 @@ const customLogo = () =>
 
 app.get("/brand/logo", (_req, res) => {
   res.set("Cache-Control", "no-cache");
-  res.sendFile(customLogo() || path.join(here, "public/brand/logo.svg"));
+  res.sendFile(customLogo() || path.join(here, "public/brand/logo.png"));
 });
 app.get("/manifest.webmanifest", (_req, res) => {
   const b = readBrand();
@@ -77,13 +77,14 @@ app.get("/manifest.webmanifest", (_req, res) => {
       lang: "fr",
       start_url: "/",
       display: "standalone",
-      background_color: b.couleurPrimaire,
+      background_color: "#ffffff",
       theme_color: b.couleurPrimaire,
-      icons: [
-        logo
-          ? { src: "/brand/logo", sizes: "512x512", type: `image/${path.extname(logo).slice(1).replace("jpg", "jpeg")}`, purpose: "any" }
-          : { src: "/brand/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any maskable" },
-      ],
+      icons: logo
+        ? [{ src: "/brand/logo", sizes: "512x512", type: `image/${path.extname(logo).slice(1).replace("jpg", "jpeg")}`, purpose: "any" }]
+        : [
+            { src: "/brand/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any maskable" },
+            { src: "/brand/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" },
+          ],
     }),
   );
 });
