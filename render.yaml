@@ -1,0 +1,15 @@
+# Déploiement Render (Blueprint). Offre gratuite = mode démo, données non conservées.
+# Pour la production : plan payant + disque persistant monté sur /data (voir README).
+services:
+  - type: web
+    name: othermia
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: APP_PASSWORD
+        sync: false
