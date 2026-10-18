@@ -1,0 +1,32 @@
+{
+  "name": "cvc-doctor",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "start": "node --env-file-if-exists=.env server.js",
+    "dev": "node --watch --env-file-if-exists=.env server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Othermia/Recherche-de-pannes-pac-clim-chaudiere.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Othermia/Recherche-de-pannes-pac-clim-chaudiere/issues"
+  },
+  "homepage": "https://github.com/Othermia/Recherche-de-pannes-pac-clim-chaudiere#readme",
+  "type": "module",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.135.0",
+    "dompurify": "^3.4.17",
+    "express": "^5.3.0",
+    "marked": "^18.1.1",
+    "multer": "^2.4.0",
+    "pdfjs-dist": "^6.4.299",
+    "zod": "^4.6.7"
+  }
+}

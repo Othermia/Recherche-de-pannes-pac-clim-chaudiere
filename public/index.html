@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b5cab">
+  <title>CVC Doctor</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icon.svg">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="top">
+    <img src="/icon.svg" alt="">
+    <h1>CVC Doctor</h1>
+    <span class="equip-chip" id="equip-chip">Aucun appareil</span>
+  </header>
+  <div id="banner"></div>
+
+  <main>
+    <!-- ASSISTANT -->
+    <section class="view active" id="view-assistant">
+      <div class="chat-bar">
+        <div class="seg" id="mode-seg">
+          <button data-mode="diagnostic" class="active">Panne</button>
+          <button data-mode="parametrage">Réglage</button>
+          <button data-mode="question">Question</button>
+        </div>
+        <select id="chat-equip" aria-label="Appareil concerné"></select>
+        <button class="btn small" id="chat-history-btn" title="Historique">Historique</button>
+        <button class="btn small" id="chat-new">Nouveau</button>
+      </div>
+      <div class="chat-log" id="chat-log"></div>
+      <div class="attach-preview" id="attach-preview"></div>
+      <form class="composer" id="composer">
+        <label class="btn" title="Joindre une photo (afficheur, carte, câblage…)">
+          📷<input type="file" accept="image/*" capture="environment" id="chat-photo" hidden multiple>
+        </label>
+        <textarea id="chat-input" rows="1" placeholder="Code erreur, symptômes, mesures…" enterkeyhint="send"></textarea>
+        <button class="btn primary" id="chat-send">Envoyer</button>
+      </form>
+    </section>
+
+    <!-- SCANNER -->
+    <section class="view" id="view-scan">
+      <div class="card">
+        <h2>Scanner une plaque signalétique</h2>
+        <p class="muted">Photographiez la plaque bien à plat, sans reflet. L'appareil est identifié automatiquement : marque, modèle, référence, n° de série, fluide, puissances, alimentation…</p>
+        <label class="btn primary big">📷 Photographier la plaque
+          <input type="file" accept="image/*" capture="environment" id="scan-input" hidden>
+        </label>
+        <label class="btn big" style="margin-top:8px">🖼️ Choisir une image
+          <input type="file" accept="image/*" id="scan-input-gallery" hidden>
+        </label>
+        <img id="scan-preview" class="scan-preview" hidden alt="Plaque">
+        <div id="scan-status" class="muted"></div>
+      </div>
+      <div class="card" id="scan-result" hidden>
+        <h2>Appareil identifié</h2>
+        <form class="grid" id="scan-form"></form>
+        <div class="row" style="margin-top:12px">
+          <button class="btn primary" id="scan-save">Enregistrer dans le parc</button>
+          <button class="btn" id="scan-docs">Trouver les docs</button>
+          <button class="btn" id="scan-diag">Diagnostiquer</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- DOCUMENTATIONS -->
+    <section class="view" id="view-docs">
+      <div class="card">
+        <h2>Trouver des documentations en ligne</h2>
+        <div class="grid">
+          <label class="f">Fabricant<input id="find-fab" placeholder="Daikin, Atlantic, Viessmann…"></label>
+          <label class="f">Modèle / gamme<input id="find-mod" placeholder="Altherma 3 R, Alfea Extensa…"></label>
+          <label class="f">Référence<input id="find-ref" placeholder="EHVX08S23E6V…"></label>
+          <label class="f">Type<input id="find-type" placeholder="PAC air/eau, chaudière gaz…"></label>
+          <label class="f full">Besoin particulier (optionnel)<input id="find-need" placeholder="ex. liste des codes erreur, schéma électrique carte principale"></label>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn primary" id="find-btn">Rechercher</button>
+          <span class="muted" id="find-status"></span>
+        </div>
+        <div class="list" id="find-results" style="margin-top:10px"></div>
+      </div>
+
+      <div class="card">
+        <h2>Ma bibliothèque</h2>
+        <div class="row">
+          <input id="lib-search" placeholder="Rechercher dans toutes les docs (ex. E9, A11, sonde départ…)" style="flex:1">
+          <label class="btn">⬆️ Importer un PDF<input type="file" accept="application/pdf" id="lib-upload" hidden multiple></label>
+        </div>
+        <div class="list" id="lib-hits" style="margin-top:10px"></div>
+        <h3>Documents enregistrés</h3>
+        <div class="list" id="lib-list"></div>
+      </div>
+    </section>
+
+    <!-- PARC -->
+    <section class="view" id="view-parc">
+      <div class="card">
+        <div class="row" style="justify-content:space-between">
+          <h2 style="margin:0">Parc d'équipements</h2>
+          <button class="btn small" id="parc-add">+ Ajouter</button>
+        </div>
+        <input id="parc-filter" placeholder="Filtrer (client, marque, modèle…)" style="margin-top:10px">
+        <div class="list" id="parc-list" style="margin-top:10px"></div>
+      </div>
+    </section>
+
+    <!-- CALCULS -->
+    <section class="view" id="view-calc">
+      <details class="calc" open>
+        <summary>Débit hydraulique</summary>
+        <div>
+          <div class="grid">
+            <label class="f">Puissance (kW)<input type="number" step="any" id="c-deb-p" value="8"></label>
+            <label class="f">ΔT départ/retour (K)<input type="number" step="any" id="c-deb-dt" value="5"></label>
+            <label class="f">Fluide<select id="c-deb-fl"></select></label>
+            <label class="f">T moyenne (°C)<input type="number" step="any" id="c-deb-t" value="40"></label>
+          </div>
+          <div class="result" id="r-deb"></div>
+          <h3>Contrôle : puissance réellement transmise</h3>
+          <div class="grid">
+            <label class="f">Débit mesuré (m³/h)<input type="number" step="any" id="c-pm-q" placeholder="ex. 1.2"></label>
+            <label class="f">ΔT mesuré (K)<input type="number" step="any" id="c-pm-dt" placeholder="ex. 4.5"></label>
+          </div>
+          <div class="result" id="r-pm"></div>
+        </div>
+      </details>
+
+      <details class="calc">
+        <summary>Tuyauteries : vitesse et pertes de charge</summary>
+        <div>
+          <div class="grid">
+            <label class="f">Débit (m³/h)<input type="number" step="any" id="c-tub-q" value="1.4"></label>
+            <label class="f">Matériau<select id="c-tub-mat"></select></label>
+            <label class="f">Fluide<select id="c-tub-fl"></select></label>
+            <label class="f">T eau (°C)<input type="number" step="any" id="c-tub-t" value="40"></label>
+            <label class="f">Vitesse maxi (m/s)<input type="number" step="any" id="c-tub-v" value="1.0"></label>
+            <label class="f">R maxi (Pa/m)<input type="number" step="any" id="c-tub-r" value="200"></label>
+            <label class="f">Longueur aller+retour (m)<input type="number" step="any" id="c-tub-l" value="20"></label>
+          </div>
+          <div class="result" id="r-tub"></div>
+        </div>
+      </details>
+
+      <details class="calc">
+        <summary>Loi d'eau (courbe de chauffe)</summary>
+        <div>
+          <div class="grid">
+            <label class="f full">Émetteurs<select id="c-le-em"></select></label>
+            <label class="f">T ext. de base (°C)<input type="number" step="any" id="c-le-tb" value="-7"></label>
+            <label class="f">T ambiante consigne (°C)<input type="number" step="any" id="c-le-ti" value="20"></label>
+            <label class="f">T départ à T base (°C)<input type="number" step="any" id="c-le-td" value="35"></label>
+            <label class="f">ΔT émetteurs à T base (K)<input type="number" step="any" id="c-le-dt" value="5"></label>
+            <label class="f">Exposant émetteur n<input type="number" step="any" id="c-le-n" value="1.1"></label>
+            <label class="f">Arrêt chauffage T ext. (°C)<input type="number" step="any" id="c-le-ta" value="16"></label>
+            <label class="f">T départ mini (°C)<input type="number" step="any" id="c-le-min" value="22"></label>
+            <label class="f">T départ maxi (°C)<input type="number" step="any" id="c-le-max" value="45"></label>
+          </div>
+          <div class="result" id="r-le"></div>
+        </div>
+      </details>
+
+      <details class="calc">
+        <summary>Vase d'expansion</summary>
+        <div>
+          <div class="grid">
+            <label class="f">Volume installation (L)<input type="number" step="any" id="c-ve-v" value="150"></label>
+            <label class="f">T maxi eau (°C)<input type="number" step="any" id="c-ve-t" value="80"></label>
+            <label class="f">Hauteur statique (m)<input type="number" step="any" id="c-ve-h" value="6"></label>
+            <label class="f">Tarage soupape (bar)<input type="number" step="any" id="c-ve-s" value="3"></label>
+            <label class="f">Eau glycolée<select id="c-ve-g"><option value="0">Non</option><option value="1">Oui</option></select></label>
+          </div>
+          <p class="muted">Volume estimé : radiateurs acier ≈ 10–13 L/kW, fonte ≈ 15 L/kW, plancher ≈ 15–20 L/kW, + générateur et réseau.</p>
+          <div class="result" id="r-ve"></div>
+        </div>
+      </details>
+
+      <details class="calc">
+        <summary>Volume mini / ballon tampon (anti-court-cycle)</summary>
+        <div>
+          <div class="grid">
+            <label class="f">Puissance mini générateur (kW)<input type="number" step="any" id="c-vm-p" value="3"></label>
+            <label class="f">Durée mini de marche (min)<input type="number" step="any" id="c-vm-d" value="6"></label>
+            <label class="f">Différentiel / hystérésis (K)<input type="number" step="any" id="c-vm-h" value="5"></label>
+            <label class="f">Volume toujours en circulation (L)<input type="number" step="any" id="c-vm-e" value="30"></label>
+          </div>
+          <p class="muted">Vérifiez aussi le volume mini exigé par le fabricant (dégivrage), souvent indiqué dans la notice d'installation.</p>
+          <div class="result" id="r-vm"></div>
+        </div>
+      </details>
+
+      <details class="calc">
+        <summary>Frigorifique : surchauffe et sous-refroidissement</summary>
+        <div>
+          <p class="muted">Saisissez les températures de saturation lues sur le manifold (selon le fluide) et les températures de tuyauterie mesurées par pince.</p>
+          <div class="grid">
+            <label class="f">T saturation évap. BP (°C)<input type="number" step="any" id="c-fr-te" value="2"></label>
+            <label class="f">T aspiration mesurée (°C)<input type="number" step="any" id="c-fr-ta" value="8"></label>
+            <label class="f">T saturation cond. HP (°C)<input type="number" step="any" id="c-fr-tc" value="42"></label>
+            <label class="f">T ligne liquide mesurée (°C)<input type="number" step="any" id="c-fr-tl" value="37"></label>
+          </div>
+          <div class="result" id="r-fr"></div>
+        </div>
+      </details>
+
+      <details class="calc">
+        <summary>Équilibrage : Kv de vanne</summary>
+        <div>
+          <div class="grid">
+            <label class="f">Débit (m³/h)<input type="number" step="any" id="c-kv-q" value="0.5"></label>
+            <label class="f">Δp souhaitée (kPa)<input type="number" step="any" id="c-kv-dp" value="10"></label>
+            <label class="f">Kv de la vanne (pour Δp)<input type="number" step="any" id="c-kv-kv" placeholder="ex. 1.6"></label>
+          </div>
+          <div class="result" id="r-kv"></div>
+        </div>
+      </details>
+
+      <details class="calc">
+        <summary>Déperditions (estimation rapide)</summary>
+        <div>
+          <div class="grid">
+            <label class="f">Surface chauffée (m²)<input type="number" step="any" id="c-dp-s" value="110"></label>
+            <label class="f">Hauteur sous plafond (m)<input type="number" step="any" id="c-dp-h" value="2.5"></label>
+            <label class="f full">Isolation<select id="c-dp-g"></select></label>
+            <label class="f">T intérieure (°C)<input type="number" step="any" id="c-dp-ti" value="20"></label>
+            <label class="f">T ext. de base (°C)<input type="number" step="any" id="c-dp-tb" value="-7"></label>
+          </div>
+          <p class="muted">Estimation par coefficient G : ne remplace pas une étude thermique pièce par pièce (NF EN 12831).</p>
+          <div class="result" id="r-dp"></div>
+        </div>
+      </details>
+
+      <details class="calc">
+        <summary>Conversions</summary>
+        <div>
+          <div class="grid">
+            <label class="f">Pression (bar)<input type="number" step="any" id="c-cv-bar" value="1.5"></label>
+            <label class="f">Puissance (kW)<input type="number" step="any" id="c-cv-kw" value="10"></label>
+          </div>
+          <div class="result" id="r-cv"></div>
+        </div>
+      </details>
+
+      <button class="btn primary big" id="calc-ask">Envoyer mes calculs à l'expert pour une fiche de réglage</button>
+    </section>
+  </main>
+
+  <nav class="tabs" id="tabs">
+    <button data-view="assistant" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12h3l2-6 4 12 2-6h5"/></svg>Diagnostic</button>
+    <button data-view="scan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 12h10"/></svg>Scanner</button>
+    <button data-view="docs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h7"/></svg>Docs</button>
+    <button data-view="parc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9h4M7 13h10"/></svg>Parc</button>
+    <button data-view="calc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h2M12 11h2M8 15h2M12 15h2M16 11v6"/></svg>Calculs</button>
+  </nav>
+
+  <dialog id="dlg"></dialog>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

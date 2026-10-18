@@ -1,0 +1,11 @@
+{
+  "name": "CVC Doctor – Dépannage PAC, clim, chaudière",
+  "short_name": "CVC Doctor",
+  "description": "Diagnostic de pannes, documentations et calculs pour PAC, climatisation et chaudières.",
+  "lang": "fr",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0b5cab",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
